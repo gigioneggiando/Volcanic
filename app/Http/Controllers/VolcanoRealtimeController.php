@@ -17,24 +17,22 @@ class VolcanoRealtimeController extends Controller
     public function latest(Request $request)
     {
         $continent = $request->query('continent', 'EUR');
-        $limit     = (int) $request->query('limit', 10);
-        $page      = (int) $request->query('page', 1);
+        $limit = (int) $request->query('limit', 10);
+        $page = (int) $request->query('page', 1);
         $useFallback = $request->boolean('fallback', true); // default: true
 
         $apiKey = config('services.ambee.key');
 
         if (empty($apiKey)) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Ambee API key is not configured (missing AMBEE_API_KEY in .env).',
             ], 500);
         }
 
         try {
-            $client = Http::withOptions([
-                'verify' => false,
-            ])->withHeaders([
-                'x-api-key'    => $apiKey,
+            $client = Http::withHeaders([
+                'x-api-key' => $apiKey,
                 'Content-type' => 'application/json',
             ]);
 
@@ -42,8 +40,8 @@ class VolcanoRealtimeController extends Controller
             $primaryResponse = $client->get('https://api.ambeedata.com/disasters/latest/by-continent', [
                 'continent' => $continent,
                 'eventType' => 'VO',
-                'limit'     => $limit,
-                'page'      => $page,
+                'limit' => $limit,
+                'page' => $page,
             ]);
 
             if ($primaryResponse->failed()) {
@@ -51,61 +49,59 @@ class VolcanoRealtimeController extends Controller
 
                 Log::warning('Ambee volcano API primary request failed', [
                     'status' => $primaryResponse->status(),
-                    'body'   => $body,
+                    'body' => $body,
                 ]);
 
                 return response()->json([
-                    'status'  => 'error',
-                    'message' => $body['message'] ?? 'Unable to fetch volcano data from Ambee.',
-                    'details' => $body,
+                    'status' => 'error',
+                    'message' => 'Unable to fetch volcano data from Ambee.',
                 ], $primaryResponse->status() ?: 500);
             }
 
-            $primaryData  = $primaryResponse->json();
-            $rawEvents    = $this->extractEvents($primaryData);
-            $eventSource  = 'volcano_only';
+            $primaryData = $primaryResponse->json();
+            $rawEvents = $this->extractEvents($primaryData);
+            $eventSource = 'volcano_only';
             $fallbackData = null;
 
             // 2) fallback: any disasters if no volcano events
             if (empty($rawEvents) && $useFallback) {
                 $fallbackResponse = $client->get('https://api.ambeedata.com/disasters/latest/by-continent', [
                     'continent' => $continent,
-                    'limit'     => $limit,
-                    'page'      => $page,
+                    'limit' => $limit,
+                    'page' => $page,
                 ]);
 
                 if ($fallbackResponse->ok()) {
                     $fallbackData = $fallbackResponse->json();
-                    $fallbackRaw  = $this->extractEvents($fallbackData);
+                    $fallbackRaw = $this->extractEvents($fallbackData);
 
-                    if (!empty($fallbackRaw)) {
-                        $rawEvents   = $fallbackRaw;
+                    if (! empty($fallbackRaw)) {
+                        $rawEvents = $fallbackRaw;
                         $eventSource = 'fallback_natural_disasters';
                     }
                 }
             }
 
-            // normalize events 
+            // normalize events
             $events = array_map(function ($event) {
                 return $this->normalizeEvent($event);
             }, $rawEvents);
 
             return response()->json([
-                'status'        => 'ok',
-                'continent'     => $continent,
-                'events'        => $events,
-                'event_source'  => $eventSource,
+                'status' => 'ok',
+                'continent' => $continent,
+                'events' => $events,
+                'event_source' => $eventSource,
             ]);
         } catch (\Throwable $e) {
             Log::error('Error calling Ambee volcano API', [
-                'message'   => $e->getMessage(),
+                'message' => $e->getMessage(),
                 'continent' => $continent,
             ]);
 
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Unexpected error while contacting Ambee.',
-                'details' => $e->getMessage(),
             ], 500);
         }
     }
@@ -113,7 +109,7 @@ class VolcanoRealtimeController extends Controller
     // extract events
     private function extractEvents(?array $data): array
     {
-        if (!is_array($data)) {
+        if (! is_array($data)) {
             return [];
         }
 
@@ -137,14 +133,14 @@ class VolcanoRealtimeController extends Controller
     {
         $details = $event['details'] ?? $event;
 
-        $rawName    = $details['event_name']   ?? ($event['event_name']   ?? null);
-        $place      = $details['event_place']  ?? ($details['country']    ?? ($event['country'] ?? null));
-        $country    = $details['country_code'] ?? ($event['country_code'] ?? null);
-        $eventType  = $details['event_type']   ?? ($event['event_type']   ?? null);
-        $dateRaw    = $details['event_date']   ?? ($details['start_date_and_last_detection'] ?? ($event['event_date'] ?? null));
-        $magnitude  = $details['event_magnitude'] ?? ($event['event_magnitude'] ?? null);
-        $severity   = $details['severity']        ?? ($event['severity']        ?? null);
-        $vei        = $details['max_volcano_explosivity_index_vei'] ?? null;
+        $rawName = $details['event_name'] ?? ($event['event_name'] ?? null);
+        $place = $details['event_place'] ?? ($details['country'] ?? ($event['country'] ?? null));
+        $country = $details['country_code'] ?? ($event['country_code'] ?? null);
+        $eventType = $details['event_type'] ?? ($event['event_type'] ?? null);
+        $dateRaw = $details['event_date'] ?? ($details['start_date_and_last_detection'] ?? ($event['event_date'] ?? null));
+        $magnitude = $details['event_magnitude'] ?? ($event['event_magnitude'] ?? null);
+        $severity = $details['severity'] ?? ($event['severity'] ?? null);
+        $vei = $details['max_volcano_explosivity_index_vei'] ?? null;
         $exposedPop = $details['exposed_population'] ?? ($details['population_exposure_index_pai'] ?? null);
         $description = $details['event_description'] ?? null;
 
@@ -155,14 +151,14 @@ class VolcanoRealtimeController extends Controller
                 $dt = new \DateTime($dateRaw);
                 $dateFormatted = $dt->format('Y-m-d H:i');
             } catch (\Throwable $e) {
-    
+
             }
         }
 
-        // Title logic 
+        // Title logic
         if ($place) {
             $title = $place;
-        } elseif ($rawName && !$this->looksLikeId($rawName)) {
+        } elseif ($rawName && ! $this->looksLikeId($rawName)) {
             $title = $rawName;
         } elseif ($country) {
             $title = "Event in {$country}";
@@ -172,8 +168,12 @@ class VolcanoRealtimeController extends Controller
 
         // Learn-more URL
         $searchParts = [];
-        if ($title)   $searchParts[] = $title;
-        if ($country) $searchParts[] = $country;
+        if ($title) {
+            $searchParts[] = $title;
+        }
+        if ($country) {
+            $searchParts[] = $country;
+        }
 
         $typeLabel = $this->mapEventTypeReadable($eventType);
         if ($typeLabel) {
@@ -181,28 +181,28 @@ class VolcanoRealtimeController extends Controller
         }
 
         $learnMoreUrl = null;
-        if (!empty($details['more_info']) && is_string($details['more_info'])) {
+        if (! empty($details['more_info']) && is_string($details['more_info'])) {
             $trimmed = trim($details['more_info']);
             if (preg_match('#^https?://#i', $trimmed)) {
                 $learnMoreUrl = $trimmed;
             }
         }
 
-        if (!$learnMoreUrl && !empty($searchParts)) {
-            $learnMoreUrl = 'https://www.google.com/search?q=' . urlencode(implode(' ', $searchParts));
+        if (! $learnMoreUrl && ! empty($searchParts)) {
+            $learnMoreUrl = 'https://www.google.com/search?q='.urlencode(implode(' ', $searchParts));
         }
 
         return [
-            'title'              => $title,
-            'location_label'     => $country ?: 'Location not specified',
-            'country_code'       => $country,
-            'date'               => $dateFormatted,
-            'magnitude'          => $magnitude,
-            'severity'           => $severity,
-            'vei'                => $vei,
+            'title' => $title,
+            'location_label' => $country ?: 'Location not specified',
+            'country_code' => $country,
+            'date' => $dateFormatted,
+            'magnitude' => $magnitude,
+            'severity' => $severity,
+            'vei' => $vei,
             'exposed_population' => $exposedPop,
-            'description'        => $description,
-            'learn_more_url'     => $learnMoreUrl,
+            'description' => $description,
+            'learn_more_url' => $learnMoreUrl,
         ];
     }
 
@@ -226,7 +226,9 @@ class VolcanoRealtimeController extends Controller
 
     private function mapEventTypeReadable(?string $code): string
     {
-        if (!$code) return '';
+        if (! $code) {
+            return '';
+        }
 
         return match ($code) {
             'VO' => 'volcano',
